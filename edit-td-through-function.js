@@ -3,36 +3,90 @@
 
 define(['jquery', 'jquery-ui'], function($) {
 
-  $.widget("ui.tdEditThroughFunction", {
+  $.widget("ui.editWithFormula", {
     options: {
-      allow_strings: false,
-      enforce_data: false,
       auto_save: false,
       save_button: false,
       omit: [],
+      update_direction: 'left-to-right',
       formula: function (x) {
         return x;
+      },
+      first: {
+        class: undefined,
+        formula: undefined
+      },
+      last: {
+        class: undefined,
+        formula: undefined
       },
       save: function () {
         console.log('There is no save function set.');
       }
     },
 
+    _update_cell: function(td, in_value){
+      var prev = td.prev().data('td');
+      var next = td.next().data('td');
+      in_value = typeof in_value === NaN ? 0 : in_value;
+
+      if (td.is(this.options.first.class)) {
+        new_data = typeof in_value === 'undefined' ? 0 : this.options.first.formula(in_value, prev, next);
+      } else if (td.is(this.options.last.class)) {
+        new_data = typeof in_value === 'undefined' ? 0 : this.options.last.formula(in_value, prev, next);
+      } else {
+        new_data = typeof in_value === 'undefined' ? 0 : this.options.formula(in_value, prev, next);
+      }
+
+      td.data('td', this.i);
+      td.data('td', new_data);
+    },
+
+    _update: function() {
+      var tr = this.element;
+      var tds = tr.children('td');
+      if (this.options.update_direction === 'right-to-left') {
+        tds = $(tds.get().reverse());
+      }
+      $.each(tds.not(this.options.omit.join(",")), $.proxy(function (i, el) {
+        var td = $(el);
+        this._update_cell(td, td.children('input').val());
+      }, this));
+    },
+
+    _render: function() {
+      var tr = this.element;
+      var tds = tr.children('td');
+      $.each(tds.not(this.options.omit.join(", ")), $.proxy(function (i, el) {
+        var td = $(el);
+        var span = td.children('span');
+        span.text(td.data('td'));
+      }, this));
+    },
+
     _create: function () {
       var tr = this.element;
       var tds = tr.children('td');
 
+      if (typeof this.options.first.formula === 'undefined') {
+        this.options.first.formula = this.options.formula;
+      }
+      if (typeof this.options.last.formula === 'undefined') {
+        this.options.first.formula = this.options.formula;
+      }
+      if (typeof this.options.first.class === 'undefined') {
+        this.options.first.class = ':first-child';
+      }
+      if (typeof this.options.last.class === 'undefined') {
+        this.options.last.class = ':last-child';
+      }
+
       $.each(tds.not(this.options.omit.join(", ")), $.proxy(function (i, el) {
         var td = $(el);
-        if (this.options.enforce_data) {
-          td.text(this.options.formula(parseInt(td.data('td'), 10)));
-        }
-        var td_text = td.text();
-        var data_td = td.data('td') ? td.data('td') : '';
-        td.text('')
-        .addClass('td-' + i)
-        .prepend('<span>' + td_text + '</span>')
-        .prepend('<input type="text" value="' + data_td + '" class="editbox" />');
+        td.text('');
+        td.addClass('td-' + i)
+        .prepend('<span></span>')
+        .prepend('<input type="text" value="' + td.data('td') + '" class="editbox" />');
       }, this));
 
       $('.editbox').css({
@@ -40,6 +94,7 @@ define(['jquery', 'jquery-ui'], function($) {
         'margin-bottom': '5px',
         'padding': '3px'
       }).hide();
+
       $('.editbox').siblings('span').css({
         'width': '90%',
         'display': 'inline-block'
@@ -49,55 +104,46 @@ define(['jquery', 'jquery-ui'], function($) {
         tr.append('<td><button>Save</button></td>');
       }
 
+      this._update();
+      this._render();
+    },
+
+    _init: function () {
+      var tr = this.element;
+      var tds = tr.children('td');
+
       tr.on('click', 'td', function (e) {
         $('.editbox', e.delegateTarget).fadeIn();
         $('input', e.currentTarget).focus();
         e.stopPropagation();
       });
 
+      tr.on('keyup', '.editbox', $.proxy(function (e) {
+        var td = $(e.target).parent();
+        var input = td.children('input');
+        var in_value;
+
+        if (e.which == 13 || e.which == 27) {
+          $('.editbox').fadeOut();
+        } else {
+          this._update_cell(td, input.val());
+          this._update();
+          this._render();
+        }
+      }, this));
+
       $('html').on('click', function (e) {
-        // store data and close
-        tds.each(function (i) {
-          var td = $(this);
-          var input = td.children('input');
-          td.data('td', input.val());
-        });
         $('.editbox').fadeOut();
       });
 
-      tr.on('keyup', '.editbox', $.proxy(function (e) {
-        var td = $(e.target).parent();
-        var span = td.children('span');
-        var input = td.children('input');
-        var prev = $('span', td.prev()).text();
-        var next = $('span', td.next()).text();
-        if (e.which == 27) { // escape to cancel
-          input.val(td.data('td'));
-          span.text(this.options.formula(td.data('td'), p, n));
-          $('.editbox').fadeOut();
-          return;
-        } else if (e.which == 13) {
-          // enter to store data and close
-          td.data('td', input.val());
-          $('.editbox').fadeOut();
-          return;
-        } else {
-          var in_value = parseInt(input.val(), 10);
-          var out_value = isNaN(in_value) ? 0 : this.options.formula(in_value);
-          span.text(out_value);
-          return;
-        }
-
-      }, this));
-
-      tr.on('click', 'button', function (e) {
-        save();
+      tr.on('click', 'button', $.proxy(function (e) {
+        this.save();
         e.stopPropagation();
-      });
+      }, this));
     },
 
     destroy: function () {
       $('.editbox').remove();
-    },
+    }
   });
 });
